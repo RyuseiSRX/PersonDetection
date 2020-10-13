@@ -30,7 +30,10 @@ public class VideoFileCapture {
         DispatchQueue.global().async {
             guard let videoTrack = self.asset.tracks(withMediaType: .video).first else { return }
 
-            let readerOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: nil)
+            let settings: [String : Any] = [
+              kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32BGRA)
+            ]
+            let readerOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: settings)
 
             self.assetReader.add(readerOutput)
             let readingStarted = self.assetReader.startReading()

@@ -17,7 +17,13 @@ class ProcessVideoFileViewController: UIViewController {
 
     var currentBuffer: CVPixelBuffer?
 
+    var currentSampleBuffer: CMSampleBuffer?  // Remove if object marking is implemented
+
     let coreMLModel = MobileNetV2_SSDLite()
+
+    var recording = false
+
+    var recorder = EventVideoProducer()
 
     @IBOutlet var videoPreview: UIView!
 
@@ -52,19 +58,59 @@ class ProcessVideoFileViewController: UIViewController {
         videoFileCapture.processFrames()
     }
 
+    func predict(sampleBuffer: CMSampleBuffer) {
+      currentSampleBuffer = sampleBuffer
+
+      if currentBuffer == nil, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+        currentBuffer = pixelBuffer
+
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        DispatchQueue.global(qos: .userInitiated).sync {
+            do {
+              try handler.perform([self.visionRequest])
+            } catch {
+              print("Failed to perform Vision request: \(error)")
+            }
+        }
+
+        currentBuffer = nil
+      }
+    }
+
+
     func processObservations(for request: VNRequest, error: Error?) {
+        if let results = request.results as? [VNRecognizedObjectObservation], let sampleBuffer = self.currentSampleBuffer {
+            let personResults = results.filter { (observation) -> Bool in
+                observation.labels.first?.identifier == "person"
+            }
+            if !personResults.isEmpty {
+                self.recording = true
+                self.recorder.appendSampleBuffer(buffer: sampleBuffer)
+            }
+        }
     }
 
 }
 
 extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
 
-    func videoFileCapture(_ capture: VideoFileCapture, didCaptureVideoFrame: CMSampleBuffer) {
-        print("frame captured")
+    func videoFileCapture(_ capture: VideoFileCapture, didCaptureVideoFrame sampleBuffer: CMSampleBuffer) {
+        if recording {
+            // TODO: Process object marking
+            if !recorder.appendSampleBuffer(buffer: sampleBuffer) {
+                recorder.saveFile()
+                recorder = EventVideoProducer()
+                predict(sampleBuffer: sampleBuffer)
+            }
+        } else {
+            predict(sampleBuffer: sampleBuffer)
+        }
     }
 
     func videoFileCaptureFinished(_ capture: VideoFileCapture) {
-        print("finished")
+        if recorder.hasData {
+            recorder.saveFile()
+        }
     }
 
 }
