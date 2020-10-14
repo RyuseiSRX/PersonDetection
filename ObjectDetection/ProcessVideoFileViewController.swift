@@ -10,22 +10,59 @@ import UIKit
 import CoreMedia
 import CoreML
 import Vision
+import AVKit
 
 class ProcessVideoFileViewController: UIViewController {
 
-    var videoFileCapture: VideoFileCapture!
-
-    var currentBuffer: CVPixelBuffer?
-
-    var currentSampleBuffer: CMSampleBuffer?  // Remove if object marking is implemented
-
-    let coreMLModel = MobileNetV2_SSDLite()
-
-    var recording = false
-
-    var recorder = EventVideoProducer()
-
     @IBOutlet var videoPreview: UIView!
+
+    let titleLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Play the video file or start person detection"
+        return label
+    }()
+    lazy var playButton: UIButton = {
+        let button = UIButton.init()
+        button.setTitle(" Play video file from app ", for: .normal)
+        button.setTitleColor(.blue, for: .normal)
+        button.setTitleColor(.gray, for: .disabled)
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.lightGray.cgColor
+        button.layer.cornerRadius = 4
+        button.layer.masksToBounds = true
+        button.addTarget(self, action: #selector(playButtonTouched(_:)), for: .touchUpInside)
+        return button
+    }()
+    lazy var detectButton: UIButton = {
+        let button = UIButton.init()
+        button.setTitle(" Detect person from video file ", for: .normal)
+        button.setTitleColor(.blue, for: .normal)
+        button.setTitleColor(.gray, for: .disabled)
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.lightGray.cgColor
+        button.layer.cornerRadius = 4
+        button.layer.masksToBounds = true
+        button.addTarget(self, action: #selector(detectButtonTouched(_:)), for: .touchUpInside)
+        return button
+    }()
+    let progressBar: UIProgressView = {
+        let view = UIProgressView()
+        view.progressTintColor = .blue
+        return view
+    }()
+
+    var videoFileCapture: VideoFileCapture!
+    var currentBuffer: CVPixelBuffer?
+    var currentBufferTimestamp: CMTime?//currentSampleBuffer: CMSampleBuffer?  // Remove if object marking is implemented
+    let coreMLModel = MobileNetV2_SSDLite()
+    var recording = false
+    lazy var recorder: EventVideoProducer = {
+        let recorder = EventVideoProducer()
+        recorder.delegate = self
+        return recorder
+    }()
+
+    let objectMarkerDrawer = ObjectMarkerDrawer()
 
     lazy var visionModel: VNCoreMLModel = {
         do {
@@ -55,35 +92,84 @@ class ProcessVideoFileViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        videoPreview.backgroundColor = .white
+
         // Do any additional setup after loading the view.
-        let filePath = Bundle.main.path(forResource: "video", ofType: "mp4")!
+
+        progressBar.isHidden = true
+
+        view.addSubview(titleLabel)
+        view.addSubview(playButton)
+        view.addSubview(detectButton)
+        view.addSubview(progressBar)
+
+        setupConstraints()
+    }
+
+    private func setupConstraints() {
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        playButton.translatesAutoresizingMaskIntoConstraints = false
+        detectButton.translatesAutoresizingMaskIntoConstraints = false
+        progressBar.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 44),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            playButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 44),
+            playButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            detectButton.topAnchor.constraint(equalTo: playButton.bottomAnchor, constant: 44),
+            detectButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            progressBar.topAnchor.constraint(equalTo: detectButton.bottomAnchor, constant: 30),
+            progressBar.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            progressBar.widthAnchor.constraint(equalToConstant: 200)
+        ])
+    }
+
+    @objc func playButtonTouched(_ sender: UIButton) {
+        let viewController = AVPlayerViewController()
+        let filePath = Bundle.main.path(forResource: "video2", ofType: "mp4")!
+        viewController.player = AVPlayer(url: URL(fileURLWithPath: filePath))
+        present(viewController, animated: true, completion: nil)
+    }
+
+    @objc func detectButtonTouched(_ sender: UIButton) {
+        playButton.isEnabled = false
+        detectButton.isEnabled = false
+        progressBar.isHidden = false
+
+        let filePath = Bundle.main.path(forResource: "video2", ofType: "mp4")!
         videoFileCapture = VideoFileCapture(fileURL: URL(fileURLWithPath: filePath))
         videoFileCapture.delegate = self
+        recorder = EventVideoProducer()
+        recorder.delegate = self
         videoFileCapture.processFrames()
     }
 
     func predict(sampleBuffer: CMSampleBuffer) {
-      currentSampleBuffer = sampleBuffer
+        guard currentBuffer == nil, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+        else { return }
 
-      if currentBuffer == nil, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+        // Keep in view controller for vision request handling
         currentBuffer = pixelBuffer
+        currentBufferTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         DispatchQueue.global(qos: .userInitiated).sync {
             do {
-              try handler.perform([self.visionRequest])
+                try handler.perform([self.visionRequest])
             } catch {
-              print("Failed to perform Vision request: \(error)")
+                print("Failed to perform Vision request: \(error)")
             }
         }
 
         currentBuffer = nil
-      }
+        currentBufferTimestamp = nil
     }
 
 
-    func processObservations(for request: VNRequest, error: Error?) {
-        if let results = request.results as? [VNRecognizedObjectObservation], let sampleBuffer = currentSampleBuffer {
+    private func processObservations(for request: VNRequest, error: Error?) {
+        if let results = request.results as? [VNRecognizedObjectObservation],
+            let timestamp = currentBufferTimestamp {
             let personResults = results.filter { (observation) -> Bool in
                 observation.labels.first?.identifier == "person"
             }
@@ -94,86 +180,24 @@ class ProcessVideoFileViewController: UIViewController {
 
             if !personResults.isEmpty, let pixelBuffer = currentBuffer {
                 // Draw marker
-                // Lock pixelBuffer to start adding mask on it
-                CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
-
-                defer {
-                    CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
-                }
-
-                //Deep copy buffer pixel to avoid memory leak
-                var processedPixelBuffer: CVPixelBuffer? = nil
-                let options = [
-                    kCVPixelBufferCGImageCompatibilityKey as String: true,
-                    kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
-                ] as CFDictionary
-
-                let status = CVPixelBufferCreate(kCFAllocatorDefault,
-                                                 CVPixelBufferGetWidth(pixelBuffer),
-                                                 CVPixelBufferGetHeight(pixelBuffer),
-                                                 kCVPixelFormatType_32BGRA, options,
-                                                 &processedPixelBuffer)
-                guard status == kCVReturnSuccess else { return }
-
-                // Lock destination buffer until we finish the drawing
-                CVPixelBufferLockBaseAddress(processedPixelBuffer!,
-                                             CVPixelBufferLockFlags(rawValue: 0))
-
-                defer {
-                    CVPixelBufferUnlockBaseAddress(processedPixelBuffer!, CVPixelBufferLockFlags(rawValue: 0))
-                }
-
-                guard let processedPixelBufferUnwrapped = processedPixelBuffer,
-                    let processedPixelBufferBaseAddress = CVPixelBufferGetBaseAddress(processedPixelBuffer!)
-                else {
-                    return
-                }
-
-                memcpy(processedPixelBufferBaseAddress,
-                       CVPixelBufferGetBaseAddress(pixelBuffer),
-                       CVPixelBufferGetHeight(pixelBuffer) * CVPixelBufferGetBytesPerRow(pixelBuffer))
-
-                let width = CVPixelBufferGetWidth(processedPixelBufferUnwrapped)
-                let height = CVPixelBufferGetHeight(processedPixelBufferUnwrapped)
-                let bytesPerRow = CVPixelBufferGetBytesPerRow(processedPixelBufferUnwrapped)
-                let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue))  // Need to cache
-                let colorSpace = CGColorSpaceCreateDeviceRGB()  // Need to cache
-                guard let context = CGContext(data: processedPixelBufferBaseAddress,
-                                        width: width,
-                                        height: height,
-                                        bitsPerComponent: 8,
-                                        bytesPerRow: bytesPerRow,
-                                        space: colorSpace,
-                                        bitmapInfo: bitmapInfo.rawValue)
+                guard let processedPixelBuffer = objectMarkerDrawer.drawMarkers(for: personResults, onto: pixelBuffer)
                 else { return }
 
-                // Draw
-                let scale = CGAffineTransform.identity.scaledBy(x: CGFloat(width), y: CGFloat(height))
-
-                // Show the bounding box for each object
-                for feature in personResults {
-                    let label = String(format: "Person %.1f", feature.confidence * 100)
-                    let color = UIColor.red
-                    let rect = feature.boundingBox.applying(scale)
-                    let boundingBoxLayers = boundingBoxView.getLayers(frame: rect, label: label, color: color)
-                    boundingBoxLayers.shapeLayer.render(in: context)
-                    context.translateBy(x: rect.origin.x, y: rect.origin.y)
-                    boundingBoxLayers.textLayer.render(in: context)
-                }
-
-                let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                if !recorder.appendSampleBuffer(buffer: processedPixelBufferUnwrapped, timestamp: timestamp) {
+                if !recorder.appendSampleBuffer(buffer: processedPixelBuffer, timestamp: timestamp) {
                     recorder.saveFile()
                     // Video duration has a 10 seconds limit
                     // Trigger another recording for this new detection
                     recorder = EventVideoProducer()
-                    recorder.appendSampleBuffer(buffer: processedPixelBufferUnwrapped, timestamp: timestamp)
+                    recorder.delegate = self
+                    recorder.appendSampleBuffer(buffer: processedPixelBuffer, timestamp: timestamp)
                 }
             } else if recording, let buffer = currentBuffer {
-                let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                 if !recorder.appendSampleBuffer(buffer: buffer, timestamp: timestamp) {
                     // Discard this buffer and stop recording due to 10 sec limit
                     recorder.saveFile()
+                    // Trigger another recording for this new detection
+                    recorder = EventVideoProducer()
+                    recorder.delegate = self
                     recording = false
                 }
             }
@@ -185,17 +209,14 @@ class ProcessVideoFileViewController: UIViewController {
 extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
 
     func videoFileCapture(_ capture: VideoFileCapture, didCaptureVideoFrame sampleBuffer: CMSampleBuffer) {
-//        if recording {
-//            // TODO: Process object marking
-//            if !recorder.appendSampleBuffer(buffer: sampleBuffer) {
-//                recorder.saveFile()
-//                recorder = EventVideoProducer()
-//                predict(sampleBuffer: sampleBuffer)
-//            }
-//        } else {
-//            predict(sampleBuffer: sampleBuffer)
-//        }
         predict(sampleBuffer: sampleBuffer)
+
+        // Update progress bar
+        let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let progress = Float(currentTime.value) / Float(videoFileCapture.duration.value)
+        DispatchQueue.main.async {
+            self.progressBar.progress = progress
+        }
     }
 
     func videoFileCaptureFinished(_ capture: VideoFileCapture) {
@@ -203,7 +224,65 @@ extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
         if recorder.hasData {
             recorder.saveFile()
             recording = false
+        } else {
+            displayExportFinishedUIIfNeeded()
         }
     }
+
+    func videoFileCaptureFailed(_ capture: VideoFileCapture) {
+        playButton.isEnabled = true
+        detectButton.isEnabled = true
+        progressBar.isHidden = true
+
+        let ok = UIAlertAction(title: "OK", style: .default, handler: nil)
+        let alert = UIAlertController(title: nil, message: "Failed to read source video", preferredStyle: .alert)
+        alert.addAction(ok)
+        present(alert, animated: true, completion: nil)
+    }
+
+    func displayExportFinishedUIIfNeeded() {
+        guard !progressBar.isHidden else { return }
+
+        playButton.isEnabled = true
+        detectButton.isEnabled = true
+        progressBar.isHidden = true
+
+        let ok = UIAlertAction(title: "OK", style: .default, handler: nil)
+        let alert = UIAlertController(title: nil, message: "Event videos have been saved into Photo Library", preferredStyle: .alert)
+        alert.addAction(ok)
+        present(alert, animated: true, completion: nil)
+    }
+}
+
+extension ProcessVideoFileViewController: EventVideoProducerDelegate {
+
+    func eventVideoProducerDidSavedVideo(_ producer: EventVideoProducer) {
+        if videoFileCapture.finished {
+            displayExportFinishedUIIfNeeded()
+        }
+    }
+
+    func eventVideoProducerNeedsLibraryPermission(_ producer: EventVideoProducer) {
+        playButton.isEnabled = true
+        detectButton.isEnabled = true
+        progressBar.isHidden = true
+
+        let ok = UIAlertAction(title: "OK", style: .default, handler: nil)
+        let alert = UIAlertController(title: nil, message: "Please turn on permission for photo library", preferredStyle: .alert)
+        alert.addAction(ok)
+        present(alert, animated: true, completion: nil)
+    }
+
+    func eventVideoProducerFailedToSavedVideo(_ producer: EventVideoProducer) {
+        playButton.isEnabled = true
+        detectButton.isEnabled = true
+        progressBar.isHidden = true
+
+        let ok = UIAlertAction(title: "OK", style: .default, handler: nil)
+        let alert = UIAlertController(title: nil, message: "Fail to save video to library", preferredStyle: .alert)
+        alert.addAction(ok)
+        present(alert, animated: true, completion: nil)
+    }
+
 
 }

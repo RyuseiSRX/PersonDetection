@@ -10,7 +10,13 @@ import Foundation
 import AVFoundation
 import Photos
 
-class EventVideoProducer {
+public protocol EventVideoProducerDelegate: class {
+    func eventVideoProducerDidSavedVideo(_ producer: EventVideoProducer)
+    func eventVideoProducerNeedsLibraryPermission(_ producer: EventVideoProducer)
+    func eventVideoProducerFailedToSavedVideo(_ producer: EventVideoProducer)
+}
+
+public class EventVideoProducer {
 
     private let writerInput: AVAssetWriterInput
     private let writer: AVAssetWriter
@@ -18,6 +24,8 @@ class EventVideoProducer {
 
     private var startTime: CMTime?  // Not sure why duration of CMSampleBuffer is invalid, so use time calculation to get a rough value
     private(set) var hasData = false
+
+    weak var delegate: EventVideoProducerDelegate?
 
     init() {
         let settings: [String : Any] = [
@@ -71,12 +79,20 @@ class EventVideoProducer {
                     }) { (success, error) in
                         if let error = error {
                             print("\(error.localizedDescription)")
+                            DispatchQueue.main.async {
+                                self.delegate?.eventVideoProducerFailedToSavedVideo(self)
+                            }
                         } else {
                             print("Video has been exported to photo library.")
+                            DispatchQueue.main.async {
+                                self.delegate?.eventVideoProducerDidSavedVideo(self)
+                            }
                         }
                     }
                 } else {
-                    // TODO: Tip for library permission
+                    DispatchQueue.main.async {
+                        self.delegate?.eventVideoProducerNeedsLibraryPermission(self)
+                    }
                 }
             }
         }

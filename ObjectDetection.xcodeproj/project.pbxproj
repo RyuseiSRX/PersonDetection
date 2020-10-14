@@ -19,6 +19,8 @@
 		91663B2D253580EE00B3ADD0 /* ProcessVideoFileViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91663B2C253580EE00B3ADD0 /* ProcessVideoFileViewController.swift */; };
 		91663B2F2535812F00B3ADD0 /* VideoFileCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91663B2E2535812F00B3ADD0 /* VideoFileCapture.swift */; };
 		91663B3125358E4F00B3ADD0 /* EventVideoProducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91663B3025358E4F00B3ADD0 /* EventVideoProducer.swift */; };
+		91E4C2D02536D9A200F53657 /* ObjectMarkerDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E4C2CF2536D9A200F53657 /* ObjectMarkerDrawer.swift */; };
+		91E4C2D42537023C00F53657 /* video2.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 91E4C2D32537023C00F53657 /* video2.mp4 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +38,8 @@
 		91663B2C253580EE00B3ADD0 /* ProcessVideoFileViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessVideoFileViewController.swift; sourceTree = "<group>"; };
 		91663B2E2535812F00B3ADD0 /* VideoFileCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFileCapture.swift; sourceTree = "<group>"; };
 		91663B3025358E4F00B3ADD0 /* EventVideoProducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventVideoProducer.swift; sourceTree = "<group>"; };
+		91E4C2CF2536D9A200F53657 /* ObjectMarkerDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectMarkerDrawer.swift; sourceTree = "<group>"; };
+		91E4C2D32537023C00F53657 /* video2.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = video2.mp4; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +79,8 @@
 				91663B2E2535812F00B3ADD0 /* VideoFileCapture.swift */,
 				91663B2C253580EE00B3ADD0 /* ProcessVideoFileViewController.swift */,
 				91663B3025358E4F00B3ADD0 /* EventVideoProducer.swift */,
+				91E4C2CF2536D9A200F53657 /* ObjectMarkerDrawer.swift */,
+				91E4C2D32537023C00F53657 /* video2.mp4 */,
 				7BCB413821C55F9B00BFC4D0 /* MobileNetV2_SSDLite.mlmodel */,
 				91663B2A253580B500B3ADD0 /* video.mp4 */,
 				7BCB412121C3096200BFC4D0 /* Assets.xcassets */,
@@ -147,6 +153,7 @@
 				7BCB412521C3096200BFC4D0 /* LaunchScreen.storyboard in Resources */,
 				7BCB412221C3096200BFC4D0 /* Assets.xcassets in Resources */,
 				7BCB412021C3096100BFC4D0 /* Main.storyboard in Resources */,
+				91E4C2D42537023C00F53657 /* video2.mp4 in Resources */,
 				91663B2B253580B500B3ADD0 /* video.mp4 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -160,6 +167,7 @@
 			files = (
 				91663B3125358E4F00B3ADD0 /* EventVideoProducer.swift in Sources */,
 				91663B2D253580EE00B3ADD0 /* ProcessVideoFileViewController.swift in Sources */,
+				91E4C2D02536D9A200F53657 /* ObjectMarkerDrawer.swift in Sources */,
 				91663B2F2535812F00B3ADD0 /* VideoFileCapture.swift in Sources */,
 				7BCB411D21C3096100BFC4D0 /* ViewController.swift in Sources */,
 				7BCB413221C309B900BFC4D0 /* BoundingBoxView.swift in Sources */,

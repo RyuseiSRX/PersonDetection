@@ -10,16 +10,21 @@ import AVFoundation
 import Foundation
 
 public protocol VideoFileCaptureDelegate: class {
-  func videoFileCapture(_ capture: VideoFileCapture, didCaptureVideoFrame: CMSampleBuffer)
-  func videoFileCaptureFinished(_ capture: VideoFileCapture)
+    func videoFileCapture(_ capture: VideoFileCapture, didCaptureVideoFrame: CMSampleBuffer)
+    func videoFileCaptureFinished(_ capture: VideoFileCapture)
+    func videoFileCaptureFailed(_ capture: VideoFileCapture)
 }
 
 public class VideoFileCapture {
 
     let asset: AVAsset
     let assetReader: AVAssetReader
+    private(set) var finished = false
 
     weak var delegate: VideoFileCaptureDelegate?
+    var duration: CMTime {
+        asset.duration
+    }
 
     init(fileURL: URL) {
         asset = AVAsset(url: fileURL)
@@ -28,7 +33,12 @@ public class VideoFileCapture {
 
     func processFrames() {
         DispatchQueue.global().async {
-            guard let videoTrack = self.asset.tracks(withMediaType: .video).first else { return }
+            guard let videoTrack = self.asset.tracks(withMediaType: .video).first else {
+                DispatchQueue.main.async {
+                    self.delegate?.videoFileCaptureFailed(self)
+                }
+                return
+            }
 
             let settings: [String : Any] = [
               kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32BGRA)
@@ -45,7 +55,10 @@ public class VideoFileCapture {
                 self.delegate?.videoFileCapture(self, didCaptureVideoFrame: buffer)
                 sampleBuffer = readerOutput.copyNextSampleBuffer()
             }
-            self.delegate?.videoFileCaptureFinished(self)
+            self.finished = true
+            DispatchQueue.main.async {
+                self.delegate?.videoFileCaptureFinished(self)
+            }
         }
     }
 }
