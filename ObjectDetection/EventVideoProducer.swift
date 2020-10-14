@@ -39,15 +39,14 @@ class EventVideoProducer {
     }
 
     @discardableResult
-    func appendSampleBuffer(buffer: CMSampleBuffer) -> Bool {
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(buffer)
+    func appendSampleBuffer(buffer: CVPixelBuffer, timestamp: CMTime) -> Bool {
         if let startTime = startTime {
             let duration = CMTimeSubtract(timestamp, startTime)
             if CMTimeGetSeconds(duration) >= 10 {
                 return false
             }
         } else {
-            startTime = CMSampleBufferGetPresentationTimeStamp(buffer)
+            startTime = timestamp
             hasData =  true
             writer.startWriting()
             writer.startSession(atSourceTime: CMTime.zero)
@@ -58,7 +57,7 @@ class EventVideoProducer {
             let date = Date().addingTimeInterval(0.01)
             RunLoop.current.run(until: date)
         }
-        return adaptor.append(CMSampleBufferGetImageBuffer(buffer)!, withPresentationTime: presentationTime)
+        return adaptor.append(buffer, withPresentationTime: presentationTime)
     }
 
     func saveFile() {

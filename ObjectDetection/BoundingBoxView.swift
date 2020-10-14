@@ -15,7 +15,7 @@ class BoundingBoxView {
     textLayer.foregroundColor = UIColor.black.cgColor
     textLayer.isHidden = true
     textLayer.contentsScale = UIScreen.main.scale
-    textLayer.fontSize = 14
+    textLayer.fontSize = 28
     textLayer.font = UIFont(name: "Avenir", size: textLayer.fontSize)
     textLayer.alignmentMode = CATextLayerAlignmentMode.center
   }
@@ -35,13 +35,14 @@ class BoundingBoxView {
 
     textLayer.string = label
     textLayer.backgroundColor = color.cgColor
+    textLayer.isGeometryFlipped = false
     textLayer.isHidden = false
 
     let attributes = [
       NSAttributedString.Key.font: textLayer.font as Any
     ]
 
-    let textRect = label.boundingRect(with: CGSize(width: 400, height: 100),
+    let textRect = label.boundingRect(with: CGSize(width: 400, height: 200),
                                       options: .truncatesLastVisibleLine,
                                       attributes: attributes, context: nil)
     let textSize = CGSize(width: textRect.width + 12, height: textRect.height)
@@ -53,4 +54,35 @@ class BoundingBoxView {
     shapeLayer.isHidden = true
     textLayer.isHidden = true
   }
+}
+
+extension BoundingBoxView {
+
+    func getLayers(frame: CGRect, label: String, color: UIColor) -> (shapeLayer: CAShapeLayer, textLayer: CATextLayer) {
+        CATransaction.setDisableActions(true)
+
+        let path = UIBezierPath(rect: frame)
+        shapeLayer.path = path.cgPath
+        shapeLayer.strokeColor = color.cgColor
+        shapeLayer.isHidden = false
+
+        textLayer.string = label
+        textLayer.isGeometryFlipped = true
+        textLayer.backgroundColor = color.cgColor
+        textLayer.isHidden = false
+
+        let attributes = [
+          NSAttributedString.Key.font: textLayer.font as Any
+        ]
+
+        let textRect = label.boundingRect(with: CGSize(width: 400, height: 200),
+                                          options: .truncatesLastVisibleLine,
+                                          attributes: attributes, context: nil)
+        let textSize = CGSize(width: textRect.width + 12, height: textRect.height)
+        let textOrigin = CGPoint(x: frame.origin.x - 2, y: frame.origin.y - textSize.height)
+        textLayer.frame = CGRect(origin: textOrigin, size: textSize)
+
+        return (shapeLayer: shapeLayer, textLayer: textLayer)
+    }
+    
 }

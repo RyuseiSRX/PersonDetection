@@ -48,6 +48,10 @@ class ProcessVideoFileViewController: UIViewController {
         return request
     }()
 
+    private lazy var boundingBoxView = {
+        return BoundingBoxView()
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -79,13 +83,99 @@ class ProcessVideoFileViewController: UIViewController {
 
 
     func processObservations(for request: VNRequest, error: Error?) {
-        if let results = request.results as? [VNRecognizedObjectObservation], let sampleBuffer = self.currentSampleBuffer {
+        if let results = request.results as? [VNRecognizedObjectObservation], let sampleBuffer = currentSampleBuffer {
             let personResults = results.filter { (observation) -> Bool in
                 observation.labels.first?.identifier == "person"
             }
-            if !personResults.isEmpty {
-                self.recording = true
-                self.recorder.appendSampleBuffer(buffer: sampleBuffer)
+
+            if !recording && !personResults.isEmpty {
+                recording = true
+            }
+
+            if !personResults.isEmpty, let pixelBuffer = currentBuffer {
+                // Draw marker
+                // Lock pixelBuffer to start adding mask on it
+                CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+
+                defer {
+                    CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+                }
+
+                //Deep copy buffer pixel to avoid memory leak
+                var processedPixelBuffer: CVPixelBuffer? = nil
+                let options = [
+                    kCVPixelBufferCGImageCompatibilityKey as String: true,
+                    kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+                ] as CFDictionary
+
+                let status = CVPixelBufferCreate(kCFAllocatorDefault,
+                                                 CVPixelBufferGetWidth(pixelBuffer),
+                                                 CVPixelBufferGetHeight(pixelBuffer),
+                                                 kCVPixelFormatType_32BGRA, options,
+                                                 &processedPixelBuffer)
+                guard status == kCVReturnSuccess else { return }
+
+                // Lock destination buffer until we finish the drawing
+                CVPixelBufferLockBaseAddress(processedPixelBuffer!,
+                                             CVPixelBufferLockFlags(rawValue: 0))
+
+                defer {
+                    CVPixelBufferUnlockBaseAddress(processedPixelBuffer!, CVPixelBufferLockFlags(rawValue: 0))
+                }
+
+                guard let processedPixelBufferUnwrapped = processedPixelBuffer,
+                    let processedPixelBufferBaseAddress = CVPixelBufferGetBaseAddress(processedPixelBuffer!)
+                else {
+                    return
+                }
+
+                memcpy(processedPixelBufferBaseAddress,
+                       CVPixelBufferGetBaseAddress(pixelBuffer),
+                       CVPixelBufferGetHeight(pixelBuffer) * CVPixelBufferGetBytesPerRow(pixelBuffer))
+
+                let width = CVPixelBufferGetWidth(processedPixelBufferUnwrapped)
+                let height = CVPixelBufferGetHeight(processedPixelBufferUnwrapped)
+                let bytesPerRow = CVPixelBufferGetBytesPerRow(processedPixelBufferUnwrapped)
+                let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue))  // Need to cache
+                let colorSpace = CGColorSpaceCreateDeviceRGB()  // Need to cache
+                guard let context = CGContext(data: processedPixelBufferBaseAddress,
+                                        width: width,
+                                        height: height,
+                                        bitsPerComponent: 8,
+                                        bytesPerRow: bytesPerRow,
+                                        space: colorSpace,
+                                        bitmapInfo: bitmapInfo.rawValue)
+                else { return }
+
+                // Draw
+                let scale = CGAffineTransform.identity.scaledBy(x: CGFloat(width), y: CGFloat(height))
+
+                // Show the bounding box for each object
+                for feature in personResults {
+                    let label = String(format: "Person %.1f", feature.confidence * 100)
+                    let color = UIColor.red
+                    let rect = feature.boundingBox.applying(scale)
+                    let boundingBoxLayers = boundingBoxView.getLayers(frame: rect, label: label, color: color)
+                    boundingBoxLayers.shapeLayer.render(in: context)
+                    context.translateBy(x: rect.origin.x, y: rect.origin.y)
+                    boundingBoxLayers.textLayer.render(in: context)
+                }
+
+                let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                if !recorder.appendSampleBuffer(buffer: processedPixelBufferUnwrapped, timestamp: timestamp) {
+                    recorder.saveFile()
+                    // Video duration has a 10 seconds limit
+                    // Trigger another recording for this new detection
+                    recorder = EventVideoProducer()
+                    recorder.appendSampleBuffer(buffer: processedPixelBufferUnwrapped, timestamp: timestamp)
+                }
+            } else if recording, let buffer = currentBuffer {
+                let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                if !recorder.appendSampleBuffer(buffer: buffer, timestamp: timestamp) {
+                    // Discard this buffer and stop recording due to 10 sec limit
+                    recorder.saveFile()
+                    recording = false
+                }
             }
         }
     }
@@ -95,21 +185,24 @@ class ProcessVideoFileViewController: UIViewController {
 extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
 
     func videoFileCapture(_ capture: VideoFileCapture, didCaptureVideoFrame sampleBuffer: CMSampleBuffer) {
-        if recording {
-            // TODO: Process object marking
-            if !recorder.appendSampleBuffer(buffer: sampleBuffer) {
-                recorder.saveFile()
-                recorder = EventVideoProducer()
-                predict(sampleBuffer: sampleBuffer)
-            }
-        } else {
-            predict(sampleBuffer: sampleBuffer)
-        }
+//        if recording {
+//            // TODO: Process object marking
+//            if !recorder.appendSampleBuffer(buffer: sampleBuffer) {
+//                recorder.saveFile()
+//                recorder = EventVideoProducer()
+//                predict(sampleBuffer: sampleBuffer)
+//            }
+//        } else {
+//            predict(sampleBuffer: sampleBuffer)
+//        }
+        predict(sampleBuffer: sampleBuffer)
     }
 
     func videoFileCaptureFinished(_ capture: VideoFileCapture) {
+        // Finalize last recording if there is one
         if recorder.hasData {
             recorder.saveFile()
+            recording = false
         }
     }
 
