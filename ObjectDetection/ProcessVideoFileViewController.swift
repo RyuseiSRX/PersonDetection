@@ -56,8 +56,8 @@ class ProcessVideoFileViewController: UIViewController {
     var currentBufferTimestamp: CMTime?//currentSampleBuffer: CMSampleBuffer?  // Remove if object marking is implemented
     let coreMLModel = MobileNetV2_SSDLite()
     var recording = false
-    lazy var recorder: EventVideoProducer = {
-        let recorder = EventVideoProducer()
+    lazy var recorder: EventVideoRecorder = {
+        let recorder = EventVideoRecorder()
         recorder.delegate = self
         return recorder
     }()
@@ -140,7 +140,7 @@ class ProcessVideoFileViewController: UIViewController {
         let filePath = Bundle.main.path(forResource: "video2", ofType: "mp4")!
         videoFileCapture = VideoFileCapture(fileURL: URL(fileURLWithPath: filePath))
         videoFileCapture.delegate = self
-        recorder = EventVideoProducer()
+        recorder = EventVideoRecorder()
         recorder.delegate = self
         videoFileCapture.processFrames()
     }
@@ -187,7 +187,7 @@ class ProcessVideoFileViewController: UIViewController {
                     recorder.saveFile()
                     // Video duration has a 10 seconds limit
                     // Trigger another recording for this new detection
-                    recorder = EventVideoProducer()
+                    recorder = EventVideoRecorder()
                     recorder.delegate = self
                     recorder.appendSampleBuffer(buffer: processedPixelBuffer, timestamp: timestamp)
                 }
@@ -196,7 +196,7 @@ class ProcessVideoFileViewController: UIViewController {
                     // Discard this buffer and stop recording due to 10 sec limit
                     recorder.saveFile()
                     // Trigger another recording for this new detection
-                    recorder = EventVideoProducer()
+                    recorder = EventVideoRecorder()
                     recorder.delegate = self
                     recording = false
                 }
@@ -254,15 +254,15 @@ extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
     }
 }
 
-extension ProcessVideoFileViewController: EventVideoProducerDelegate {
+extension ProcessVideoFileViewController: EventVideoRecorderDelegate {
 
-    func eventVideoProducerDidSavedVideo(_ producer: EventVideoProducer) {
+    func eventVideoRecorderDidSavedVideo(_ recorder: EventVideoRecorder) {
         if videoFileCapture.finished {
             displayExportFinishedUIIfNeeded()
         }
     }
 
-    func eventVideoProducerNeedsLibraryPermission(_ producer: EventVideoProducer) {
+    func eventVideoRecorderNeedsLibraryPermission(_ recorder: EventVideoRecorder) {
         playButton.isEnabled = true
         detectButton.isEnabled = true
         progressBar.isHidden = true
@@ -273,7 +273,7 @@ extension ProcessVideoFileViewController: EventVideoProducerDelegate {
         present(alert, animated: true, completion: nil)
     }
 
-    func eventVideoProducerFailedToSavedVideo(_ producer: EventVideoProducer) {
+    func eventVideoRecorderFailedToSavedVideo(_ recorder: EventVideoRecorder) {
         playButton.isEnabled = true
         detectButton.isEnabled = true
         progressBar.isHidden = true
