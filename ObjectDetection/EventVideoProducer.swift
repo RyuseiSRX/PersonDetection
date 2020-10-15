@@ -25,6 +25,7 @@ public class EventVideoRecorder {
 
     private var startTime: CMTime?  // Not sure why duration of CMSampleBuffer is invalid, so use time calculation to get a rough value
     private(set) var hasData = false
+    private var writingFinished = false
 
     weak var delegate: EventVideoRecorderDelegate?
 
@@ -44,11 +45,14 @@ public class EventVideoRecorder {
         writer = try! AVAssetWriter(url: URL(fileURLWithPath: filePath), fileType: .mp4)
         writer.add(writerInput)
 
-        adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: writerInput, sourcePixelBufferAttributes: nil)
+        adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: writerInput,
+                                                       sourcePixelBufferAttributes: nil)
     }
 
     @discardableResult
     func appendSampleBuffer(buffer: CVPixelBuffer, timestamp: CMTime) -> Bool {
+        guard !writingFinished else { return false }
+
         if let startTime = startTime {
             let duration = CMTimeSubtract(timestamp, startTime)
             if CMTimeGetSeconds(duration) >= eventVideoTimeLimit {
@@ -61,7 +65,8 @@ public class EventVideoRecorder {
             writer.startSession(atSourceTime: CMTime.zero)
         }
 
-        let presentationTime = CMTime(seconds: timestamp.seconds - startTime!.seconds, preferredTimescale: writerInput.mediaTimeScale)
+        let presentationTime = CMTime(seconds: timestamp.seconds - startTime!.seconds,
+                                      preferredTimescale: writerInput.mediaTimeScale)
         while !writerInput.isReadyForMoreMediaData {
             let date = Date().addingTimeInterval(0.01)
             RunLoop.current.run(until: date)
@@ -70,7 +75,15 @@ public class EventVideoRecorder {
     }
 
     func saveFile() {
+        guard hasData else {
+            DispatchQueue.main.async {
+                self.delegate?.eventVideoRecorderFailedToSavedVideo(self)
+            }
+            return
+        }
+
         startTime = nil
+        writingFinished = true
 
         writer.finishWriting {
             PHPhotoLibrary.requestAuthorization { (status) in
