@@ -53,12 +53,7 @@ public class EventVideoRecorder {
     func appendSampleBuffer(buffer: CVPixelBuffer, timestamp: CMTime) -> Bool {
         guard !writingFinished else { return false }
 
-        if let startTime = startTime {
-            let duration = CMTimeSubtract(timestamp, startTime)
-            if CMTimeGetSeconds(duration) >= eventVideoTimeLimit {
-                return false
-            }
-        } else {
+        if startTime == nil {
             startTime = timestamp
             hasData =  true
             writer.startWriting()

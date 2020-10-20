@@ -54,6 +54,7 @@ class ProcessVideoFileViewController: UIViewController {
     var videoFileCapture: VideoFileCapture!
     var currentBuffer: CVPixelBuffer?
     var currentBufferTimestamp: CMTime?//currentSampleBuffer: CMSampleBuffer?  // Remove if object marking is implemented
+    var lastTimePersonWasDetected: CMTime?
     let coreMLModel = MobileNetV2_SSDLite()
     var recording = false
     lazy var recorder: EventVideoRecorder = {
@@ -179,6 +180,7 @@ class ProcessVideoFileViewController: UIViewController {
             }
 
             if !personResults.isEmpty, let pixelBuffer = currentBuffer {
+                lastTimePersonWasDetected = timestamp
                 // Draw marker
                 guard let processedPixelBuffer = objectMarkerDrawer.drawMarkers(for: personResults, onto: pixelBuffer)
                 else { return }
@@ -191,14 +193,22 @@ class ProcessVideoFileViewController: UIViewController {
                     recorder.delegate = self
                     recorder.appendSampleBuffer(buffer: processedPixelBuffer, timestamp: timestamp)
                 }
-            } else if recording, let buffer = currentBuffer {
-                if !recorder.appendSampleBuffer(buffer: buffer, timestamp: timestamp) {
+            } else if recording, let buffer = currentBuffer, let lastTimePersonWasDetected = lastTimePersonWasDetected {
+                if CMTimeSubtract(timestamp, lastTimePersonWasDetected).seconds > 3 {
+                    // There is no person detected within 3 seconds, save file and prepare next recording
+                    recorder.saveFile()
+                    recorder = EventVideoRecorder()
+                    recorder.delegate = self
+                    recording = false
+                    self.lastTimePersonWasDetected = nil
+                } else if !recorder.appendSampleBuffer(buffer: buffer, timestamp: timestamp) {
                     // Discard this buffer and stop recording due to 10 sec limit
                     recorder.saveFile()
                     // Trigger another recording for this new detection
                     recorder = EventVideoRecorder()
                     recorder.delegate = self
                     recording = false
+                    self.lastTimePersonWasDetected = nil
                 }
             }
         }
@@ -213,7 +223,7 @@ extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
 
         // Update progress bar
         let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        let progress = Float(currentTime.value) / Float(videoFileCapture.duration.value)
+        let progress = Float(currentTime.seconds) / Float(videoFileCapture.duration.seconds)
         DispatchQueue.main.async {
             self.progressBar.progress = progress
         }
@@ -224,6 +234,7 @@ extension ProcessVideoFileViewController: VideoFileCaptureDelegate {
         if recorder.hasData {
             recorder.saveFile()
             recording = false
+            lastTimePersonWasDetected = nil
         } else {
             displayExportFinishedUIIfNeeded()
         }
